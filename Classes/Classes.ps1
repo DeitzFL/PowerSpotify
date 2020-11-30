@@ -120,14 +120,21 @@ Class SpotifyInterface : SpotifyToken
     [Array]FindTrack ($TrackName, $TrackArtist, $Limit)
     {
         $Results = [System.Collections.ArrayList]::new()
-        $TrackName = $TrackName.Replace(' ', '%20')
+        If ($TrackName -like "*(*")
+        {
+            $TrackName = ($TrackName.Split('(')[0]).TrimEnd()
+        }
+        $TrackName = $TrackName.Replace("(", "")
+        $TrackName = $TrackName.Replace(")", "")
+        $TrackName = $TrackName.Replace(" ", '%20')
         $TrackName = $TrackName.Replace("'", "")
-        $TrackArtist = $TrackArtist.Replace(' ', '%20')
+        $TrackArtist = $TrackArtist.Replace(" ", '%20')
         $TrackArtist = $TrackArtist.Replace("'", "")
+        $TrackArtist = $TrackArtist.Replace(",", "%2C")
         $Endpoint = '/search'
-        $Query = "?q=track:$TrackName%20artist:$TrackArtist&type=track&limit=$Limit"
+        $Query = "?q=track%3A$TrackName%20artist%3A$TrackArtist&type=track&limit=$Limit"
         $SearchRequest = $This.InvokeSpotifyRequest($Endpoint + $Query)
-        Write-Host "$($SearchRequest.tracks.total) found. Returning $($SearchRequest.tracks.limit)"
+        Write-Verbose "$($SearchRequest.tracks.total) found. Returning $($SearchRequest.tracks.limit)"
         $SearchRequest.tracks.items | % { $Results.Add([SpotifyTrack]::new($_)) }
         Return $Results
     }
@@ -172,7 +179,7 @@ Class SpotifyItem
             $This.RawData = $This.GetItemByID($This.Endpoint, $SpotifyAccessToken)
             If ($This.RawData.Error)
             {
-                Throw 'Error while running GETITEMBYID'
+                Throw 'Error while running GET ITEM BY ID'
             }
         }
         Catch
@@ -226,7 +233,12 @@ Class SpotifyTrack : SpotifyItem
         $This.Name = $This.RawData.Name
         $This.Artist = $This.RawData.artists.name -join ', '
         $This.Album = $This.RawData.album.name
-        $This.ReleaseDate = $This.RawData.album.release_date
+
+        If ($This.RawData.album.release_date.length -lt 5)
+        {
+            $This.ReleaseDate = "1/1/$($This.RawData.album.release_date)"
+        }
+        Else { $This.ReleaseDate = $This.RawData.album.release_date}
         $This.DurationInSeconds = $This.RawData.duration_ms / 1000
         $This.Popularity = $This.RawData.Popularity
     }

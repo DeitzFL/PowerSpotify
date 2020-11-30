@@ -12,14 +12,24 @@ Function Find-BestSpotifyMatch
     [Int32]$ArtistWeight = 200
     [Int32]$DurationWeight = 200
     [Int32]$AlbumWeight = 100
+    [Int32]$GoodMatchWeight = 150
 
     $SearchResults = $SpotifyInterface.FindTrack($TraktorFile.Name, $TraktorFile.Artist, 10)
     $ScoredResults = @()
     # If no results are found skip
     If ($SearchResults.Count -eq 0)
     {
-        Write-Warning "No Spotify results found for $($TraktorFile.Name -$TraktorFile.Artist)"
-        Return
+        If ($TraktorFile.Name -like "*feat*")
+        {
+            $TrackName = ($TraktorFile.Name.Split('feat.')[0]).TrimEnd()
+            $SearchResults = $SpotifyInterface.FindTrack($TrackName, $TraktorFile.Artist, 10)
+        }
+
+        If ($SearchResults.Count -eq 0)
+        {
+            Write-Warning "No Spotify results found for $($TraktorFile.Name) - $($TraktorFile.Artist) trying some other searches"
+            Return
+        }
     }
 
     ForEach ($Result in $SearchResults)
@@ -66,7 +76,6 @@ Function Find-BestSpotifyMatch
                     {
                         $Score = $Score + [Math]::Round($ArtistWeight / $Artists.Count, 0)
                         Write-Verbose "Spotify Result Artist `'$($_)`' is an exact match for an artist on the Tracktor File `'$($TraktorFile.Name)`' adding $([Math]::Round($ArtistWeight / $Artists.Count, 0)). Total score is $Score"
-
                     }
                     ElseIf ($_ -like "*$($TraktorFile.Artist)*")
                     {
@@ -92,16 +101,11 @@ Function Find-BestSpotifyMatch
             }
             Else
             {
-                $DurationRange = ($TraktorFile.DurationInSeconds - 10)..($TraktorFile.DurationInSeconds + 10)
+                $DurationRange = ($TraktorFile.DurationInSeconds - 15)..($TraktorFile.DurationInSeconds + 15)
                 If ($DurationRange -contains $Result.DurationInSeconds)
                 {
                     $Score = $Score + $DurationWeight / 2
-                    Write-Verbose "Spotify Result Duration for `'$($Result.Name)`' is within +/- 10 seconds of Traktor file `'$($TraktorFile.Name)`' adding $($DurationWeight /2). Total score is $Score"
-                }
-                Else
-                {
-                    $Score = $Score - $DurationWeight
-                    Write-Verbose "Spotify Result Duration for `'$($Result.Name)`' is NOT within +/- 10 seconds of Traktor file `'$($TraktorFile.Name)`' subtracting $($DurationWeight). Total score is $Score"
+                    Write-Verbose "Spotify Result Duration for `'$($Result.Name)`' is within +/- 15 seconds of Traktor file `'$($TraktorFile.Name)`' adding $($DurationWeight /2). Total score is $Score"
                 }
             }
         }
@@ -133,9 +137,24 @@ Function Find-BestSpotifyMatch
         {
             Write-Warning "Error during album matching"
         }
-        $Result.Popularity = $Score
+
+        If ($ExactMatches -ge 1)
+        {
+            $Result.Popularity = $Score * $ExactMatches
+        }
+        Else
+        {
+            $Result.Popularity = $Score
+        }
         $ScoredResults += $Result
     }
-    $ScoredResults | sort Popularity -Descending | select -First 1
-
+    $TopResult = $ScoredResults | sort Popularity -Descending | select -First 1
+    If ($TopResult.Popularity -gt $GoodMatchWeight)
+    {
+        Return $TopResult
+    }
+    Else
+    {
+        Write-Warning "Top result has a score under $GoodMatchWeight."
+    }
 }
